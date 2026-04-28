@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>シフト管理表</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Zen+Kaku+Gothic+New:wght@400;700;900&display=swap');
+
+:root {
+  --bg:      #050810;
+  --bg2:     #0a0e1a;
+  --bg3:     #0f1525;
+  --border:  #1a2540;
+  --border2: #243050;
+  --text:    #c8d8f0;
+  --dim:     #4a6080;
+  --cyan:    #00e5ff;
+  --green:   #00ff9d;
+  --red:     #ff3366;
+  --yellow:  #ffd600;
+  --orange:  #ff6d00;
+  --purple:  #b040ff;
+  --blue:    #2979ff;
+  --pink:    #ff4488;
+  --mono: 'Share Tech Mono', monospace;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Zen Kaku Gothic New', sans-serif;
+  min-height:100vh;
+  padding:16px 8px 60px;
+  background-image:
+    linear-gradient(rgba(0,229,255,.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,229,255,.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.wrap { max-width:480px; margin:0 auto; }
+
+/* ヘッダー */
+.hdr { text-align:center; margin-bottom:18px; }
+.hdr-title {
+  font-family:var(--mono); font-size:1.4rem; letter-spacing:.2em;
+  color:var(--cyan); text-shadow:0 0 20px var(--cyan), 0 0 40px #00e5ff44;
+}
+.hdr-sub { font-size:.62rem; color:var(--dim); letter-spacing:.2em; margin-top:4px; font-family:var(--mono); }
+.hdr-line { height:1px; margin-top:10px; background:linear-gradient(90deg,transparent,var(--cyan),transparent); opacity:.4; }
+
+/* 今日カード */
+.today-card {
+  background:var(--bg2); border:1px solid var(--border2); border-radius:4px;
+  padding:14px 16px; margin-bottom:14px;
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  position:relative; box-shadow:0 0 20px #00e5ff0a;
+}
+.today-card::before {
+  content:''; position:absolute; top:0; left:0; right:0; height:1px;
+  background:linear-gradient(90deg,transparent,var(--cyan),transparent); opacity:.5;
+}
+.card-left { flex:1; min-width:0; }
+.card-sys  { font-size:.58rem; color:var(--cyan); letter-spacing:.2em; font-family:var(--mono); }
+.card-date { font-size:.88rem; font-weight:700; margin-top:3px; }
+.card-time { font-size:.68rem; color:var(--dim); margin-top:3px; font-family:var(--mono); }
+.card-badge {
+  font-family:var(--mono); font-size:1.1rem; font-weight:700; letter-spacing:.05em;
+  padding:8px 14px; border-radius:3px; white-space:nowrap; flex-shrink:0;
+  border:1px solid; text-shadow:0 0 10px currentColor;
+}
+
+/* ナビ */
+.nav { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; gap:6px; }
+.nav button {
+  background:var(--bg2); border:1px solid var(--border2); color:var(--dim);
+  padding:8px 14px; border-radius:3px; cursor:pointer; font-size:.85rem; font-family:var(--mono);
+}
+.nav button:active { color:var(--cyan); border-color:var(--cyan); }
+.month-lbl { font-family:var(--mono); font-size:.95rem; color:var(--text); letter-spacing:.08em; }
+.today-btn { color:var(--cyan) !important; border-color:var(--border2) !important; font-size:.65rem !important; padding:6px 10px !important; }
+
+/* カレンダー */
+.cal { border:1px solid var(--border2); border-radius:4px; overflow:hidden; background:var(--bg2); }
+table { width:100%; border-collapse:collapse; table-layout:fixed; }
+thead th {
+  background:var(--bg3); padding:8px 0; font-size:.62rem; color:var(--dim);
+  letter-spacing:.1em; border-bottom:1px solid var(--border2); text-align:center;
+  font-family:var(--mono);
+}
+thead th:first-child { color:#ff6b6b; }
+thead th:last-child  { color:#74b0ff; }
+
+tbody td {
+  border:1px solid var(--border); padding:4px 2px; text-align:center;
+  height:66px; vertical-align:top; background:var(--bg2); cursor:pointer;
+  transition:background .15s; position:relative;
+}
+tbody td:hover { background:var(--bg3); }
+tbody td.empty { background:var(--bg); cursor:default; }
+tbody td.empty:hover { background:var(--bg); }
+tbody td.is-today { background:#0a1525; }
+tbody td.is-today::after {
+  content:''; position:absolute; top:2px; right:2px;
+  width:4px; height:4px; border-radius:50%;
+  background:var(--cyan); box-shadow:0 0 6px var(--cyan);
+}
+
+/* 上書きマーク（鉛筆） */
+.edit-mark {
+  position:absolute; top:2px; left:3px;
+  font-size:.55rem; opacity:.8; line-height:1;
+}
+
+.num {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:20px; height:20px; border-radius:2px;
+  font-size:.7rem; font-family:var(--mono); margin-bottom:2px;
+}
+.is-today .num { color:var(--cyan); border:1px solid var(--cyan); }
+.is-sun .num { color:#ff6b6b; }
+.is-sat .num { color:#74b0ff; }
+
+.badge {
+  display:block; font-size:.62rem; font-weight:700;
+  padding:3px 1px; border-radius:2px; margin:0 2px;
+  font-family:'Zen Kaku Gothic New',sans-serif; border:1px solid transparent;
+}
+
+/* 予測シフト色 */
+.c-日勤 { background:#00ff9d18; color:#00ff9d; border-color:#00ff9d44; }
+.c-夜勤 { background:#2979ff18; color:#5b9cf6; border-color:#2979ff44; }
+.c-明け { background:#b040ff18; color:#c878ff; border-color:#b040ff44; }
+.c-公休 { background:#ff336618; color:#ff3366; border-color:#ff336644; }
+
+/* 上書きシフト色 */
+.c-補勤日 { background:#00ff9d18; color:var(--green);  border-color:#00ff9d55; }
+.c-補勤夜 { background:#2979ff28; color:#80b4ff;        border-color:#2979ff66; }
+.c-補勤明 { background:#b040ff18; color:#c878ff;        border-color:#b040ff44; }
+.c-有給   { background:#ffd60018; color:var(--yellow);  border-color:#ffd60055; }
+.c-看休   { background:#ff688018; color:#ff9090;        border-color:#ff688055; }
+.c-欠勤   { background:#ff336618; color:var(--red);     border-color:#ff336655; }
+
+/* 今日カードバッジ色 */
+.cb-日勤 { background:#00ff9d22; color:#00ff9d; border-color:#00ff9d66; }
+.cb-夜勤 { background:#2979ff22; color:#5b9cf6; border-color:#2979ff66; }
+.cb-明け { background:#b040ff22; color:#c878ff; border-color:#b040ff66; }
+.cb-公休 { background:#ff336622; color:#ff3366; border-color:#ff336666; }
+.cb-補勤日 { background:#00ff9d22; color:var(--green); border-color:#00ff9d66; }
+.cb-補勤夜 { background:#2979ff28; color:#80b4ff;      border-color:#2979ff88; }
+.cb-有給   { background:#ffd60022; color:var(--yellow); border-color:#ffd60066; }
+.cb-看休   { background:#ff688022; color:#ff9090;       border-color:#ff688066; }
+.cb-欠勤   { background:#ff336622; color:var(--red);    border-color:#ff336666; }
+
+/* 凡例 */
+.legend-wrap { margin-top:12px; }
+.legend-title { font-family:var(--mono); font-size:.58rem; color:var(--dim); letter-spacing:.15em; margin-bottom:6px; }
+.legend { display:flex; gap:6px; justify-content:center; flex-wrap:wrap; }
+.legend span { display:flex; align-items:center; gap:3px; font-size:.58rem; color:var(--dim); font-family:var(--mono); }
+.legend i { display:inline-block; width:7px; height:7px; border-radius:1px; }
+.legend-row { display:flex; align-items:flex-start; gap:8px; }
+.legend-label { font-family:var(--mono); font-size:.62rem; color:var(--text); letter-spacing:.08em; white-space:nowrap; padding-top:1px; min-width:72px; display:block; margin-bottom:4px; }
+.reset-all-btn {
+  display:block; width:100%;
+  background:transparent; border:1px solid var(--red); color:var(--red);
+  padding:8px; border-radius:3px; cursor:pointer;
+  font-family:var(--mono); font-size:.68rem; letter-spacing:.12em;
+  transition:.15s; text-align:center;
+}
+.reset-all-btn:active { background:#ff336618; }
+
+/* モーダル共通 */
+.modal-bg {
+  display:none; position:fixed; inset:0; background:#000b; z-index:100;
+  align-items:flex-end; justify-content:center; backdrop-filter:blur(3px);
+}
+.modal-bg.open { display:flex; }
+.modal {
+  background:var(--bg2); border:1px solid var(--border2);
+  border-radius:8px 8px 0 0; width:100%; max-width:480px;
+  padding:16px 12px 32px;
+  box-shadow:0 -4px 30px #00e5ff18;
+  position:relative; max-height:80vh; overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+}
+.modal::before {
+  content:''; position:absolute; top:0; left:0; right:0; height:1px;
+  background:linear-gradient(90deg,transparent,var(--cyan),transparent); opacity:.5;
+}
+.modal-date-lbl {
+  font-size:1rem; font-weight:700; color:var(--cyan);
+  text-align:center; margin-bottom:12px; letter-spacing:.08em;
+  text-shadow:0 0 10px var(--cyan);
+}
+.modal-group-hdr {
+  font-family:var(--mono); font-size:.6rem; color:var(--dim);
+  letter-spacing:.15em; padding:10px 4px 6px; margin-top:4px;
+}
+.modal-btn-wrap { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:4px; }
+.modal-btn {
+  background:var(--bg3); border:1px solid var(--border2); color:var(--text);
+  padding:10px 8px; border-radius:4px; cursor:pointer; font-size:.78rem;
+  text-align:left; font-family:'Zen Kaku Gothic New',sans-serif;
+  transition:.15s; line-height:1.4;
+}
+.modal-btn:active { border-color:var(--cyan); }
+.modal-btn .btn-name { font-weight:700; font-size:.82rem; }
+.modal-btn .btn-time { font-size:.62rem; color:var(--dim); margin-top:2px; }
+.modal-btn.is-reset { border-left:3px solid var(--cyan); }
+.modal-btn.is-reset .btn-name { color:var(--cyan); }
+.modal-btn.is-danger { border-left:3px solid var(--red); }
+.modal-btn.is-danger .btn-name { color:var(--red); }
+
+.modal-cancel {
+  width:100%; background:transparent; border:1px solid var(--border2);
+  color:var(--dim); padding:10px; border-radius:4px; cursor:pointer;
+  font-size:.75rem; font-family:var(--mono); letter-spacing:.1em; margin-top:6px;
+}
+
+/* 警告ダイアログ */
+.confirm-box {
+  display:none; position:fixed; inset:0; background:#000c; z-index:200;
+  align-items:center; justify-content:center;
+}
+.confirm-box.open { display:flex; }
+.confirm-inner {
+  background:var(--bg2); border:1px solid var(--red);
+  border-radius:8px; padding:24px 20px; max-width:320px; width:90%;
+  box-shadow:0 0 30px #ff336630;
+}
+.confirm-title { font-family:var(--mono); font-size:.8rem; color:var(--red); letter-spacing:.1em; margin-bottom:8px; }
+.confirm-msg { font-size:.78rem; color:var(--text); line-height:1.6; margin-bottom:16px; }
+.confirm-shift { font-family:var(--mono); font-size:.85rem; color:var(--cyan); margin-bottom:16px; }
+.confirm-btns { display:flex; gap:8px; }
+.confirm-ok {
+  flex:1; background:#ff336618; border:1px solid var(--red); color:var(--red);
+  padding:10px; border-radius:4px; cursor:pointer; font-family:var(--mono); font-size:.75rem;
+}
+.confirm-cancel {
+  flex:1; background:var(--bg3); border:1px solid var(--border2); color:var(--dim);
+  padding:10px; border-radius:4px; cursor:pointer; font-family:var(--mono); font-size:.75rem;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hdr">
+    <div class="hdr-title">シフトカレンダー</div>
+    <div class="hdr-line"></div>
+  </header>
+
+  <div class="today-card">
+    <div class="card-left">
+      <div class="card-date" id="cDate">—</div>
+      <div class="card-time" id="cTime">—</div>
+    </div>
+    <div class="card-badge cb-日勤" id="cBadge">—</div>
+  </div>
+
+  <div class="nav">
+    <button id="prev">◀</button>
+    <div class="month-lbl" id="mlbl">—</div>
+    <button class="today-btn" id="goToday">TODAY</button>
+    <button id="next">▶</button>
+  </div>
+
+  <div class="cal">
+    <table>
+      <thead><tr><th>日</th><th>月</th><th>火</th><th>水</th><th>木</th><th>金</th><th>土</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <div class="legend-wrap">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+      <div class="legend-label" style="margin-bottom:0;">通常勤務</div>
+      <div class="legend" style="justify-content:flex-start;">
+        <span><i style="background:#00ff9d44;border:1px solid #00ff9d99;"></i>日勤</span>
+        <span><i style="background:#2979ff44;border:1px solid #2979ff99;"></i>夜勤</span>
+        <span><i style="background:#b040ff44;border:1px solid #b040ff99;"></i>明け</span>
+        <span><i style="background:#ff336644;border:1px solid #ff336699;"></i>公休</span>
+      </div>
+    </div>
+    <div style="margin-top:8px;">
+      <div style="display:flex;align-items:center;justify-content:flex-start;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
+        <div class="legend-label" style="margin-bottom:0;">補助勤務 ✎</div>
+        <div class="legend" style="justify-content:flex-start;">
+          <span><i style="background:#00ff9d44;border:1px solid #00ff9d99;"></i>日勤</span>
+          <span><i style="background:#2979ff44;border:1px solid #2979ff99;"></i>夜勤</span>
+          <span><i style="background:#ffd60044;border:1px solid #ffd60099;"></i>有給</span>
+          <span><i style="background:#ff688044;border:1px solid #ff688099;"></i>看休</span>
+          <span><i style="background:#ff336644;border:1px solid #ff336699;"></i>欠勤</span>
+        </div>
+      </div>
+      <button class="reset-all-btn" id="resetAllBtn">自動に戻す</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- シフト選択モーダル -->
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <div class="modal-date-lbl" id="modalDate">—</div>
+    <div id="modalGrid"></div>
+    <button class="modal-cancel" id="modalCancel">[ CANCEL ]</button>
+  </div>
+</div>
+
+<!-- 補勤夜勤の場所選択モーダル -->
+<div class="modal-bg" id="placeBg">
+  <div class="modal">
+    <div class="modal-date-lbl" id="placeDate">—</div>
+    <div class="modal-group-hdr">場所を選択してください</div>
+    <div class="modal-btn-wrap" id="placeGrid"></div>
+    <button class="modal-cancel" id="placeCancel">[ CANCEL ]</button>
+  </div>
+</div>
+
+<!-- 一括リセット確認ダイアログ -->
+<div class="confirm-box" id="resetAllBox">
+  <div class="confirm-inner">
+    <div class="confirm-title">⚠ WARNING</div>
+    <div class="confirm-msg">表示中の月の手動入力を削除して<br>自動予測に戻します。<br>この操作は取り消せません。<br>よろしいですか？</div>
+    <div class="confirm-shift" id="resetAllMonth" style="color:var(--red);">—</div>
+    <div class="confirm-btns">
+      <button class="confirm-ok" id="resetAllOk">[ 全て自動に戻す ]</button>
+      <button class="confirm-cancel" id="resetAllCancel">[ キャンセル ]</button>
+    </div>
+  </div>
+</div>
+
+<!-- 自動リセット確認ダイアログ -->
+<div class="confirm-box" id="confirmBox">
+  <div class="confirm-inner">
+    <div class="confirm-title">⚠ WARNING</div>
+    <div class="confirm-msg">この日の手動入力を削除して<br>自動予測に戻します。<br>よろしいですか？</div>
+    <div class="confirm-shift" id="confirmShift">—</div>
+    <div class="confirm-btns">
+      <button class="confirm-ok" id="confirmOk">[ 自動に戻す ]</button>
+      <button class="confirm-cancel" id="confirmCancel">[ キャンセル ]</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── バイブレーション ──
+function vib(type){
+  if(!navigator.vibrate) return;
+  if(type==='tap')    navigator.vibrate(30);
+  if(type==='done')   navigator.vibrate([40,30,40]);
+  if(type==='reset')  navigator.vibrate([60,40,60,40,60]);
+  if(type==='warn')   navigator.vibrate([80,50,80]);
+}
+
+// ── 4サイクル予測 ──
+var CYCLE = ['日勤','夜勤','明け','公休'];
+var BASE  = Date.UTC(2026,3,1);
+
+function getAuto(y,m,d){
+  var diff = Math.floor((Date.UTC(y,m,d)-BASE)/86400000);
+  return CYCLE[((diff%4)+4)%4];
+}
+
+// ── 上書きデータ ──
+var TIMES = {
+  '日勤':'8:30 〜 17:30','夜勤':'17:15 〜','明け':'〜 8:45','公休':'',
+  '補勤日':'8:30 〜 17:30','補勤夜':'17:15 〜','補勤明':'〜 8:45',
+  '有給':'','看休':'','欠勤':''
+};
+var LABELS = {
+  '日勤':'日勤','夜勤':'夜勤','明け':'明け','公休':'公休',
+  '補勤日':'補勤(日)','補勤夜':'補勤(夜)','補勤明':'補勤(明)',
+  '有給':'有給','看休':'看休','欠勤':'欠勤'
+};
+var CLASSES = {
+  '日勤':'c-日勤','夜勤':'c-夜勤','明け':'c-明け','公休':'c-公休',
+  '補勤日':'c-補勤日','補勤夜':'c-補勤夜','補勤明':'c-補勤明',
+  '有給':'c-有給','看休':'c-看休','欠勤':'c-欠勤'
+};
+var CB = {
+  '日勤':'cb-日勤','夜勤':'cb-夜勤','明け':'cb-明け','公休':'cb-公休',
+  '補勤日':'cb-補勤日','補勤夜':'cb-補勤夜','補勤明':'cb-補勤日',
+  '有給':'cb-有給','看休':'cb-看休','欠勤':'cb-欠勤'
+};
+
+function storageKey(y,m){ return 'sf2_'+y+'_'+m; }
+function loadMonth(y,m){ try{ var v=localStorage.getItem(storageKey(y,m)); return v?JSON.parse(v):{}; }catch(e){ return {}; } }
+function saveMonth(y,m,obj){ try{ localStorage.setItem(storageKey(y,m),JSON.stringify(obj)); }catch(e){} }
+function getOverride(y,m,d){ return loadMonth(y,m)[d]||null; }
+function setOverride(y,m,d,val){ var o=loadMonth(y,m); o[d]=val; saveMonth(y,m,o); }
+function clearOverride(y,m,d){ var o=loadMonth(y,m); delete o[d]; saveMonth(y,m,o); }
+
+// 表示シフト取得（上書き優先）
+function getShift(y,m,d){
+  var ov=getOverride(y,m,d);
+  return ov || getAuto(y,m,d);
+}
+function isOverride(y,m,d){ return !!getOverride(y,m,d); }
+
+var NOW=new Date(), vy=NOW.getFullYear(), vm=NOW.getMonth();
+var selectedY, selectedM, selectedD;
+
+function wdHtml(wd,dow){
+  var c=dow===0?'#ff6b6b':dow===6?'#74b0ff':'';
+  return c?'<span style="color:'+c+'">'+wd+'</span>':wd;
+}
+
+// ── 今日カード ──
+function renderToday(){
+  var y=NOW.getFullYear(),m=NOW.getMonth(),d=NOW.getDate();
+  var dow=NOW.getDay(), wd=['日','月','火','水','木','金','土'][dow];
+  document.getElementById('cDate').innerHTML=y+'年'+(m+1)+'月'+d+'日（'+wdHtml(wd,dow)+'）';
+  var shift=getShift(y,m,d);
+  var badge=document.getElementById('cBadge');
+  badge.textContent=LABELS[shift]||shift;
+  badge.className='card-badge '+(CB[shift]||'cb-日勤');
+  document.getElementById('cTime').textContent=TIMES[shift]||'';
+}
+
+// ── カレンダー描画 ──
+function render(){
+  document.getElementById('mlbl').textContent=vy+'年 '+(vm+1)+'月';
+  var first=new Date(vy,vm,1).getDay();
+  var last=new Date(vy,vm+1,0).getDate();
+  var ty=NOW.getFullYear(),tm=NOW.getMonth(),td=NOW.getDate();
+  var cells=[];
+  for(var i=0;i<first;i++) cells.push('<td class="empty"></td>');
+  for(var d=1;d<=last;d++){
+    var shift=getShift(vy,vm,d);
+    var ov=isOverride(vy,vm,d);
+    var dow=new Date(vy,vm,d).getDay();
+    var cls='';
+    if(vy===ty&&vm===tm&&d===td) cls+=' is-today';
+    if(dow===0) cls+=' is-sun';
+    if(dow===6) cls+=' is-sat';
+    var inner='<div class="num">'+d+'</div>';
+    if(ov) inner+='<div class="edit-mark">✎</div>';
+    inner+='<span class="badge '+(CLASSES[shift]||'c-日勤')+'">'+(LABELS[shift]||shift)+'</span>';
+    cells.push('<td class="'+cls.trim()+'" data-d="'+d+'">'+inner+'</td>');
+  }
+  while(cells.length%7!==0) cells.push('<td class="empty"></td>');
+  var html='';
+  for(var j=0;j<cells.length;j+=7) html+='<tr>'+cells.slice(j,j+7).join('')+'</tr>';
+  document.getElementById('tbody').innerHTML=html;
+  var tds=document.getElementById('tbody').querySelectorAll('td:not(.empty)');
+  for(var k=0;k<tds.length;k++) tds[k].addEventListener('click',onCellClick);
+}
+
+// ── セルクリック ──
+function onCellClick(){
+  vib('tap');
+  var d=parseInt(this.getAttribute('data-d'));
+  selectedY=vy; selectedM=vm; selectedD=d;
+  var dow=new Date(vy,vm,d).getDay();
+  var wd=['日','月','火','水','木','金','土'][dow];
+  var auto=getAuto(vy,vm,d);
+  document.getElementById('modalDate').innerHTML=vy+'年'+(vm+1)+'月'+d+'日（'+wdHtml(wd,dow)+'）';
+  openModal(auto);
+}
+
+// ── モーダル ──
+function openModal(autoShift){
+  document.body.style.overflow='hidden';
+  var grid=document.getElementById('modalGrid');
+  grid.innerHTML='';
+  var ov=isOverride(selectedY,selectedM,selectedD);
+
+  var groups=[
+    {
+      label:'── 補勤入力 ──',
+      btns:[
+        {key:'補勤日', name:'補勤（日勤）', time:'8:30 〜 17:30', cls:''},
+        {key:'補勤夜セット', name:'補勤（夜勤＋明け）', time:'翌日に明けを自動入力', cls:'set'}
+      ]
+    },
+    {
+      label:'── 休暇・休日 ──',
+      btns:[
+        {key:'有給', name:'有給', time:'', cls:''},
+        {key:'看休', name:'看休（看護休暇）', time:'', cls:''},
+        {key:'欠勤', name:'欠勤', time:'', cls:'is-danger'}
+      ]
+    }
+  ];
+
+  // 上書き済みの場合はリセットボタンを追加
+  if(ov){
+    var resetBtns=[
+      {key:'__reset__', name:'自動に戻す', time:'予測シフト: '+autoShift, cls:'is-reset'}
+    ];
+    // 夜勤の補勤の場合は2日分セット削除も追加
+    var curVal=getOverride(selectedY,selectedM,selectedD);
+    if(curVal==='補勤夜'){
+      resetBtns.push({key:'__reset2__', name:'夜勤＋明け を取消', time:'この日から2日分を自動に戻す', cls:'is-reset'});
+    }
+    groups.push({
+      label:'── リセット ──',
+      btns:resetBtns
+    });
+  }
+
+  for(var gi=0;gi<groups.length;gi++){
+    var g=groups[gi];
+    var hdr=document.createElement('div');
+    hdr.className='modal-group-hdr';
+    hdr.textContent=g.label;
+    grid.appendChild(hdr);
+    var wrap=document.createElement('div');
+    wrap.className='modal-btn-wrap';
+    for(var bi=0;bi<g.btns.length;bi++){
+      (function(b){
+        var btn=document.createElement('button');
+        btn.className='modal-btn'+(b.cls?' '+b.cls:'');
+        btn.innerHTML='<div class="btn-name">'+b.name+'</div><div class="btn-time">'+b.time+'</div>';
+        btn.addEventListener('click',function(){
+          if(b.key==='__reset__'){
+            closeModal();
+            openConfirm(selectedY,selectedM,selectedD);
+          } else if(b.key==='__reset2__'){
+            // 夜勤＋明け の2日分をまとめてリセット
+            var dates=getDatesFrom(selectedY,selectedM,selectedD,2);
+            vib('reset');
+            clearOverride(dates[0].y,dates[0].m,dates[0].d);
+            clearOverride(dates[1].y,dates[1].m,dates[1].d);
+            closeModal();
+            render(); renderToday();
+          } else if(b.key==='補勤夜セット'){
+            var dates=getDatesFrom(selectedY,selectedM,selectedD,2);
+            setOverride(dates[0].y,dates[0].m,dates[0].d,'補勤夜');
+            setOverride(dates[1].y,dates[1].m,dates[1].d,'補勤明');
+            vib('done');
+            closeModal();
+            render(); renderToday();
+          } else {
+            setOverride(selectedY,selectedM,selectedD,b.key);
+            vib('done');
+            closeModal();
+            render(); renderToday();
+          }
+        });
+        wrap.appendChild(btn);
+      })(g.btns[bi]);
+    }
+    grid.appendChild(wrap);
+  }
+  document.getElementById('modalBg').classList.add('open');
+}
+function closeModal(){ document.getElementById('modalBg').classList.remove('open'); document.body.style.overflow=''; }
+
+// ── 補勤夜勤の場所選択 ──
+var PLACES=['おんたけ','びょうぶ','みやま','みやま北'];
+function openPlaceModal(y,m,d){
+  var dow=new Date(y,m,d).getDay();
+  var wd=['日','月','火','水','木','金','土'][dow];
+  document.getElementById('placeDate').innerHTML=y+'年'+(m+1)+'月'+d+'日（'+wdHtml(wd,dow)+'）';
+  var pg=document.getElementById('placeGrid');
+  pg.innerHTML='';
+  for(var i=0;i<PLACES.length;i++){
+    (function(place){
+      var btn=document.createElement('button');
+      btn.className='modal-btn';
+      btn.innerHTML='<div class="btn-name">'+place+'</div>';
+      btn.addEventListener('click',function(){
+        // 補勤夜勤＋明けをセットで入力
+        var dates=getDatesFrom(y,m,d,2);
+        setOverride(dates[0].y,dates[0].m,dates[0].d,'補勤夜');
+        setOverride(dates[1].y,dates[1].m,dates[1].d,'補勤明');
+        vib('done');
+        closePlaceModal();
+        render(); renderToday();
+      });
+      pg.appendChild(btn);
+    })(PLACES[i]);
+  }
+  document.getElementById('placeBg').classList.add('open');
+  document.body.style.overflow='hidden';
+}
+function closePlaceModal(){ document.getElementById('placeBg').classList.remove('open'); document.body.style.overflow=''; }
+document.getElementById('placeCancel').onclick=function(){ vib('tap'); closePlaceModal(); };
+document.getElementById('placeBg').onclick=function(e){ if(e.target===this){ vib('tap'); closePlaceModal(); } };
+
+// ── 自動リセット確認 ──
+var confirmTarget={};
+function openConfirm(y,m,d){
+  vib('warn');
+  confirmTarget={y:y,m:m,d:d};
+  var auto=getAuto(y,m,d);
+  document.getElementById('confirmShift').textContent='→ '+auto+' に戻ります';
+  document.getElementById('confirmBox').classList.add('open');
+}
+document.getElementById('confirmOk').onclick=function(){
+  vib('reset');
+  clearOverride(confirmTarget.y,confirmTarget.m,confirmTarget.d);
+  document.getElementById('confirmBox').classList.remove('open');
+  render(); renderToday();
+};
+document.getElementById('confirmCancel').onclick=function(){
+  vib('tap');
+  document.getElementById('confirmBox').classList.remove('open');
+};
+
+function getDatesFrom(y,m,d,n){
+  var result=[]; var date=new Date(y,m,d);
+  for(var i=0;i<n;i++){
+    result.push({y:date.getFullYear(),m:date.getMonth(),d:date.getDate()});
+    date.setDate(date.getDate()+1);
+  }
+  return result;
+}
+
+function openResetAllConfirm(){
+  vib('warn');
+  document.getElementById('resetAllMonth').textContent=vy+'年'+(vm+1)+'月 の補助勤務データが消去されます';
+  document.getElementById('resetAllBox').classList.add('open');
+}
+document.getElementById('resetAllOk').onclick=function(){
+  // 表示中の月のデータのみ削除
+  vib('reset');
+  localStorage.removeItem(storageKey(vy,vm));
+  document.getElementById('resetAllBox').classList.remove('open');
+  render(); renderToday();
+};
+document.getElementById('resetAllCancel').onclick=function(){
+  vib('tap');
+  document.getElementById('resetAllBox').classList.remove('open');
+};
+
+document.getElementById('prev').onclick=function(){ vib('tap'); if(--vm<0){vm=11;vy--;} render(); };
+document.getElementById('next').onclick=function(){ vib('tap'); if(++vm>11){vm=0;vy++;} render(); };
+document.getElementById('goToday').onclick=function(){ vib('tap'); vy=NOW.getFullYear();vm=NOW.getMonth(); render(); };
+document.getElementById('modalCancel').onclick=function(){ vib('tap'); closeModal(); };
+document.getElementById('modalBg').onclick=function(e){ if(e.target===this){ vib('tap'); closeModal(); } };
+
+document.getElementById('resetAllBtn').onclick=function(){
+  openResetAllConfirm();
+};
+
+renderToday(); render();
+</script>
+</body>
+</html>
