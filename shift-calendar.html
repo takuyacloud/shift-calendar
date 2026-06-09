@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>シフトカレンダー</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+body { background:#05050e; overscroll-behavior:none; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+// Babel警告を非表示
+window.console.warn = function(msg){
+  if(typeof msg==="string" && msg.indexOf("Babel")!==-1) return;
+  console._warn && console._warn(msg);
+};
+</script>
+<script type="text/babel">
+const { useState, useMemo, useCallback } = React;
+
+// ── シフト計算 ──────────────────────────────────
+const CYCLE = ["日勤","夜勤","明け","休み"];
+const ORIGIN = new Date(2026, 3, 1);
+
+function getShift(date) {
+  const ua = Date.UTC(ORIGIN.getFullYear(), ORIGIN.getMonth(), ORIGIN.getDate());
+  const ub = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+  const diff = Math.round((ub - ua) / 86400000);
+  return CYCLE[((diff % 4) + 4) % 4];
+}
+function isAke(d) { return getShift(d) === "明け"; }
+function daysInMonth(y,m) { return new Date(y, m+1, 0).getDate(); }
+function dateKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+
+// ── 振動 ────────────────────────────────────────
+function vib(pattern) {
+  try {
+    const nav = window.navigator || navigator;
+    if (nav && nav.vibrate) nav.vibrate(Array.isArray(pattern) ? pattern : [pattern]);
+  } catch(e) {}
+}
+const VIB_TAP    = [30];
+const VIB_REG    = [40,30,40];
+const VIB_COPY   = [30,20,60];
+const VIB_CANCEL = [80,40,80,40,120];
+
+// ── 定数 ─────────────────────────────────────────
+const WD = ["日","月","火","水","木","金","土"];
+const SS = {
+  日勤:{ bg:"rgba(0,80,120,0.35)",   ac:"#00c8ff", gl:"rgba(0,200,255,0.3)",   bd:"rgba(0,200,255,0.25)" },
+  夜勤:{ bg:"rgba(80,0,140,0.35)",   ac:"#b06ef7", gl:"rgba(176,110,247,0.3)", bd:"rgba(176,110,247,0.25)" },
+  明け:{ bg:"rgba(120,60,0,0.35)",   ac:"#ff9500", gl:"rgba(255,149,0,0.3)",   bd:"rgba(255,149,0,0.25)" },
+  休み:{ bg:"rgba(0,80,40,0.35)",    ac:"#00e676", gl:"rgba(0,230,118,0.3)",   bd:"rgba(0,230,118,0.25)" },
+};
+const SM = {
+  有給:    { icon:"🌿", color:"#00e676", bg:"rgba(0,230,118,0.12)",  bd:"rgba(0,230,118,0.45)" },
+  看護休暇: { icon:"🏥", color:"#ff6b9d", bg:"rgba(255,107,157,0.12)",bd:"rgba(255,107,157,0.45)" },
+  欠勤:    { icon:"⚠️", color:"#ff5252", bg:"rgba(255,82,82,0.12)",  bd:"rgba(255,82,82,0.45)" },
+};
+
+// ── スタイル ─────────────────────────────────────
+const R = {
+  root:{ minHeight:"100vh", background:"#05050e", color:"#ccd",
+    fontFamily:"'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif",
+    position:"relative", overflowX:"hidden" },
+  grid:{ position:"fixed", top:0, left:0, right:0, bottom:0,
+    backgroundImage:"linear-gradient(rgba(0,200,255,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(0,200,255,0.025) 1px,transparent 1px)",
+    backgroundSize:"44px 44px", pointerEvents:"none", zIndex:0 },
+  wrap:{ maxWidth:660, margin:"0 auto", padding:"20px 12px", position:"relative", zIndex:1 },
+  hdr:{ display:"flex", flexWrap:"wrap", gap:12, justifyContent:"space-between", alignItems:"flex-start", marginBottom:20 },
+  ttl:{ fontSize:26, fontWeight:900, letterSpacing:5, color:"#00c8ff", fontFamily:"monospace",
+    textShadow:"0 0 24px rgba(0,200,255,0.55)" },
+  sub:{ fontSize:9, color:"#223", marginTop:3, letterSpacing:2, fontFamily:"monospace" },
+  ml:{ fontSize:22, fontWeight:900, color:"#dde", fontFamily:"monospace", letterSpacing:2 },
+  nb:{ background:"rgba(0,200,255,0.04)", border:"1px solid rgba(0,200,255,0.18)",
+    color:"#00c8ff", borderRadius:7, width:34, height:34, fontSize:13, cursor:"pointer", fontFamily:"monospace" },
+  tdb:{ background:"rgba(0,200,255,0.05)", border:"1px solid rgba(0,200,255,0.18)",
+    color:"#00c8ff", borderRadius:9, padding:"4px 18px", fontSize:10,
+    cursor:"pointer", fontFamily:"monospace", letterSpacing:2 },
+  card:{ background:"rgba(255,255,255,0.018)", border:"1px solid rgba(255,255,255,0.06)",
+    borderRadius:12, padding:"14px 10px" },
+  ov:{ position:"fixed", top:0, left:0, right:0, bottom:0,
+    background:"rgba(0,0,0,0.82)", backdropFilter:"blur(8px)",
+    zIndex:100, display:"flex", alignItems:"center", justifyContent:"center", padding:14 },
+  modal:{ background:"#0a0a18", border:"1px solid", borderRadius:14,
+    padding:"20px 22px", width:"100%", maxWidth:460, maxHeight:"92vh", overflowY:"auto" },
+  backBtn:{ background:"rgba(0,200,255,0.07)", border:"1px solid rgba(0,200,255,0.25)",
+    color:"#00c8ff", borderRadius:8, padding:"5px 14px", cursor:"pointer",
+    fontSize:11, fontFamily:"monospace", fontWeight:700, flexShrink:0, letterSpacing:1 },
+  sl:{ fontSize:9, color:"#334", fontFamily:"monospace", letterSpacing:2 },
+  sb:{ padding:"5px 12px", borderRadius:7, border:"1px solid", cursor:"pointer",
+    fontSize:11, fontFamily:"monospace", fontWeight:700, transition:"all 0.12s" },
+};
+
+// ── 年度計算 ──────────────────────────────────────
+function fiscalYearStart(d) {
+  const y = d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1;
+  return new Date(y, 3, 1);
+}
+function daysInFiscalYear(d) {
+  const start = fiscalYearStart(d);
+  const end = new Date(start.getFullYear()+1, 2, 31);
+  const arr = [];
+  let cur = new Date(start);
+  while (cur <= end) { arr.push(new Date(cur)); cur.setDate(cur.getDate()+1); }
+  return arr;
+}
+
+// ── 凡例 ─────────────────────────────────────────
+function LegendBar() {
+  return (
+    <div style={{display:"flex",flexWrap:"wrap",gap:5,justifyContent:"flex-end",maxWidth:280}}>
+      {Object.entries(SS).map(([n,c])=>(
+        <span key={n} style={{fontSize:10,fontFamily:"monospace",fontWeight:700,padding:"3px 9px",borderRadius:20,color:c.ac,background:c.bg,border:`1px solid ${c.bd}`}}>{n}</span>
+      ))}
+      {Object.entries(SM).map(([n,v])=>(
+        <span key={n} style={{fontSize:10,padding:"3px 9px",borderRadius:20,color:v.color,background:v.bg,border:`1px solid ${v.bd}`}}>{v.icon}{n}</span>
+      ))}
+      <span style={{fontSize:10,fontFamily:"monospace",fontWeight:700,padding:"3px 9px",borderRadius:20,color:"#ffd700",background:"rgba(255,215,0,0.08)",border:"1px solid rgba(255,215,0,0.35)"}}>⚡C勤務</span>
+    </div>
+  );
+}
+
+// ── カレンダービュー ──────────────────────────────
+function CalView({ days, firstDow, isTd, data, getEff, onSel }) {
+  return (
+    <div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:3}}>
+        {WD.map((w,i)=>(
+          <div key={w} style={{textAlign:"center",fontSize:10,fontFamily:"monospace",fontWeight:700,padding:"4px 0",
+            color:i===0?"#ff5252":i===6?"#5599ff":"#334"}}>{w}</div>
+        ))}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
+        {Array.from({length:firstDow},(_,i)=><div key={"e"+i}/>)}
+        {days.map(d=>{
+          const k=dateKey(d), ov=data[k]||{}, eff=getEff(d);
+          const sc=SS[eff]||SS["休み"], sv=SM[eff];
+          const dw=ov.dw===true, tod=isTd(d), dow=d.getDay();
+          return (
+            <div key={d.getDate()} onClick={()=>{vib(VIB_TAP);onSel(d);}} style={{
+              borderRadius:8, cursor:"pointer", minHeight:50, padding:"5px 3px 5px",
+              position:"relative", transition:"opacity 0.1s",
+              border: tod?"1.5px solid #ffd700": dw?"1.5px solid rgba(255,215,0,0.55)": sv?`1px solid ${sv.bd}`:`1px solid ${sc.bd}`,
+              background: dw?"rgba(255,149,0,0.18)": sv?sv.bg:sc.bg,
+            }}>
+              {dw&&<div style={{position:"absolute",top:2,right:2,fontSize:8,color:"#ffd700",fontWeight:900,textShadow:"0 0 6px #ff9500"}}>⚡</div>}
+              {ov.status&&!dw&&<div style={{position:"absolute",top:2,left:2,fontSize:8}}>{SM[ov.status]&&SM[ov.status].icon}</div>}
+              <div style={{textAlign:"center",fontSize:12,fontWeight:700,marginBottom:2,
+                color:tod?"#ffd700":dow===0?"#ff6666":dow===6?"#6699ff":"#aab"}}>{d.getDate()}</div>
+              <div style={{textAlign:"center",fontSize:8,fontFamily:"monospace",fontWeight:700,
+                color:sv?sv.color:sc.ac, textShadow:sv?"none":`0 0 8px ${sc.gl}`}}>{eff}</div>
+              {ov.note&&<div style={{position:"absolute",bottom:2,right:3,width:4,height:4,borderRadius:"50%",background:"#445"}}/>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── 一覧ビュー ───────────────────────────────────
+function ListView({ days, isTd, data, getEff, onSel }) {
+  return (
+    <div style={{maxHeight:440,overflowY:"auto"}}>
+      {days.map(d=>{
+        const k=dateKey(d), ov=data[k]||{}, eff=getEff(d);
+        const sc=SS[eff]||SS["休み"], sv=SM[eff];
+        const dw=ov.dw===true, tod=isTd(d);
+        return (
+          <div key={k} onClick={()=>{vib(VIB_TAP);onSel(d);}} style={{
+            display:"flex", alignItems:"center", gap:8,
+            padding:"7px 10px", marginBottom:2, borderRadius:7, cursor:"pointer",
+            border:tod?"1px solid rgba(255,215,0,0.35)":"1px solid transparent",
+            background:tod?"rgba(255,215,0,0.04)":"rgba(255,255,255,0.015)",
+          }}>
+            <div style={{fontFamily:"monospace",fontSize:11,width:52,flexShrink:0,
+              color:tod?"#ffd700":d.getDay()===0?"#ff6666":d.getDay()===6?"#6699ff":"#445"}}>
+              {d.getMonth()+1}/{String(d.getDate()).padStart(2,"0")} {WD[d.getDay()]}
+            </div>
+            <div style={{fontSize:10,fontFamily:"monospace",fontWeight:700,
+              padding:"2px 9px",borderRadius:5,minWidth:30,textAlign:"center",
+              color:sv?sv.color:sc.ac, background:sv?sv.bg:sc.bg,
+              border:`1px solid ${sv?sv.bd:sc.bd}`,
+              textShadow:sv?"none":`0 0 6px ${sc.gl}`}}>{eff}</div>
+            {dw&&<div style={{fontSize:10,color:"#ffd700",fontFamily:"monospace",fontWeight:700,
+              background:"rgba(255,149,0,0.1)",border:"1px solid rgba(255,215,0,0.35)",
+              borderRadius:5,padding:"2px 7px"}}>⚡ C勤務</div>}
+            {ov.status&&SM[ov.status]&&<div style={{fontSize:10,color:SM[ov.status].color,
+              background:SM[ov.status].bg,border:`1px solid ${SM[ov.status].bd}`,
+              borderRadius:5,padding:"2px 7px"}}>{SM[ov.status].icon} {ov.status}</div>}
+            {ov.note&&<div style={{fontSize:9,color:"#334",marginLeft:"auto",maxWidth:90,
+              overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>📝 {ov.note}</div>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── モーダル ─────────────────────────────────────
+function Modal({ date, data, getEff, onStatus, onToggleDw, onNote, onClose }) {
+  const k=dateKey(date), ov=data[k]||{};
+  const base=getShift(date), eff=getEff(date);
+  const canDw=isAke(date)&&!ov.status, dw=ov.dw===true;
+  const sc=SS[eff]||SS["休み"];
+  const [note,setNote]=useState(ov.note||"");
+  const [saved,setSaved]=useState(false);
+  const [confirmUnreg,setConfirmUnreg]=useState(false);
+
+  function handleSave(){
+    vib(VIB_REG); onNote(note); setSaved(true);
+    setTimeout(()=>setSaved(false),1500);
+  }
+
+  return (
+    <div style={R.ov} onClick={onClose}>
+      <div style={{...R.modal,borderColor:sc.ac+"55"}} onClick={e=>e.stopPropagation()}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
+          <div>
+            <div style={{fontSize:21,fontWeight:900,color:"#dde",fontFamily:"monospace",letterSpacing:2}}>
+              {date.getMonth()+1}月{date.getDate()}日
+              <span style={{fontSize:12,color:"#334",marginLeft:8}}>({WD[date.getDay()]})</span>
+            </div>
+            <div style={{marginTop:7,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+              <span style={{fontSize:10,color:"#334",fontFamily:"monospace"}}>基本シフト</span>
+              <span style={{fontSize:13,fontFamily:"monospace",fontWeight:800,
+                color:SS[base].ac,textShadow:`0 0 10px ${SS[base].gl}`}}>{base}</span>
+              {ov.status&&SM[ov.status]&&<><span style={{color:"#334",fontSize:11}}>→</span>
+                <span style={{fontSize:12,color:SM[ov.status].color}}>{SM[ov.status].icon} {ov.status}</span></>}
+            </div>
+          </div>
+        </div>
+
+        {canDw&&(
+          <div style={{marginBottom:16,padding:"12px 14px",borderRadius:10,
+            background:dw?"rgba(255,149,0,0.12)":"rgba(255,255,255,0.03)",
+            border:`1px solid ${dw?"rgba(255,215,0,0.5)":"rgba(255,149,0,0.25)"}`}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+              <div>
+                <div style={{fontSize:12,fontWeight:800,color:dw?"#ffd700":"#ff9500",marginBottom:3}}>
+                  {dw?"⚡ C勤務登録済み":"⚡ C勤務可能日（明け）"}
+                </div>
+                <div style={{fontSize:10,color:"#556",fontFamily:"monospace"}}>副業シフト　23:45 〜 翌 08:00</div>
+              </div>
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                <button onClick={()=>{vib(VIB_TAP);onClose();}} style={R.backBtn}>← 戻る</button>
+                {!confirmUnreg
+                  ? <button onClick={()=>{
+                      if(dw){ vib([60,30,60,30,60,30,150]); setConfirmUnreg(true); }
+                      else { vib(VIB_REG); onToggleDw(); }
+                    }} style={{
+                      padding:"7px 16px",borderRadius:8,fontWeight:800,fontSize:12,
+                      cursor:"pointer",fontFamily:"monospace",transition:"all 0.15s",
+                      border:`1px solid ${dw?"rgba(255,82,82,0.5)":"rgba(255,215,0,0.5)"}`,
+                      background:dw?"rgba(255,82,82,0.1)":"rgba(255,215,0,0.1)",
+                      color:dw?"#ff5252":"#ffd700",
+                    }}>{dw?"登録解除":"入りを登録"}</button>
+                  : <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                      <span style={{fontSize:11,color:"#ff5252",fontFamily:"monospace",fontWeight:700}}>⚠️ 本当に解除？</span>
+                      <button onClick={()=>{vib([100,50,100,50,200]);onToggleDw();setConfirmUnreg(false);}} style={{
+                        padding:"6px 12px",borderRadius:7,fontWeight:800,fontSize:11,
+                        cursor:"pointer",fontFamily:"monospace",
+                        border:"1px solid rgba(255,82,82,0.6)",
+                        background:"rgba(255,82,82,0.15)",color:"#ff5252",
+                      }}>解除する</button>
+                      <button onClick={()=>{vib(VIB_TAP);setConfirmUnreg(false);}} style={{
+                        padding:"6px 12px",borderRadius:7,fontWeight:800,fontSize:11,
+                        cursor:"pointer",fontFamily:"monospace",
+                        border:"1px solid rgba(0,200,255,0.4)",
+                        background:"rgba(0,200,255,0.08)",color:"#00c8ff",
+                      }}>やめる</button>
+                    </div>
+                }
+              </div>
+            </div>
+          </div>
+        )}
+        {isAke(date)&&ov.status&&(
+          <div style={{marginBottom:16,padding:"10px 14px",borderRadius:10,
+            background:"rgba(255,82,82,0.06)",border:"1px solid rgba(255,82,82,0.2)",
+            fontSize:11,color:"#ff5252",fontFamily:"monospace"}}>
+            ⚠️ {ov.status}が設定されているためC勤務登録不可
+          </div>
+        )}
+
+        <div style={{marginBottom:14}}>
+          <div style={R.sl}>■ メインシフト ステータス</div>
+          <div style={{display:"flex",gap:7,flexWrap:"wrap",marginTop:8}}>
+            <button onClick={()=>{vib(VIB_CANCEL);onStatus(null);}} style={{
+              ...R.sb,
+              borderColor:!ov.status?sc.ac+"88":"#223",
+              color:!ov.status?sc.ac:"#334",
+              background:!ov.status?sc.bg:"transparent",
+            }}>{base}（基本）</button>
+            {Object.entries(SM).map(([s,v])=>(
+              <button key={s} onClick={()=>{vib(VIB_REG);onStatus(s);}} style={{
+                ...R.sb,
+                borderColor:ov.status===s?v.bd:"#223",
+                color:ov.status===s?v.color:"#334",
+                background:ov.status===s?v.bg:"transparent",
+              }}>{v.icon} {s}</button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div style={R.sl}>■ メモ</div>
+          <textarea value={note} onChange={e=>setNote(e.target.value)}
+            placeholder="備考・連絡事項など" rows={3}
+            style={{width:"100%",marginTop:8,padding:"9px 11px",
+              background:"rgba(0,0,0,0.45)",border:"1px solid #1a1a2e",
+              borderRadius:7,color:"#aab",fontSize:11,
+              fontFamily:"monospace",resize:"vertical",
+              outline:"none",boxSizing:"border-box",lineHeight:1.6}}
+          />
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:5}}>
+            <button onClick={()=>{vib(VIB_TAP);onClose();}} style={{...R.backBtn,fontSize:11,padding:"5px 14px"}}>← 戻る</button>
+            <button onClick={handleSave} style={{
+              background:saved?"rgba(0,230,118,0.1)":"rgba(0,200,255,0.08)",
+              border:`1px solid ${saved?"rgba(0,230,118,0.4)":"rgba(0,200,255,0.3)"}`,
+              color:saved?"#00e676":"#00c8ff",
+              borderRadius:6,padding:"5px 16px",
+              fontSize:11,cursor:"pointer",fontFamily:"monospace",fontWeight:700,transition:"all 0.2s",
+            }}>{saved?"✅ 保存完了":"保存"}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── C勤務パネル ───────────────────────────────────
+function DWPanel({ availableDays, availTmpl, onCopyAvail, copiedAvail }) {
+  return (
+    <div style={{marginTop:16,background:"rgba(10,6,20,0.8)",
+      border:"1px solid rgba(0,200,255,0.3)",borderRadius:14,overflow:"hidden"}}>
+      <div style={{background:"linear-gradient(90deg,rgba(0,200,255,0.1),rgba(176,110,247,0.08))",
+        borderBottom:"1px solid rgba(0,200,255,0.15)",padding:"11px 16px",
+        display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+        <div>
+          <div style={{fontSize:12,fontWeight:900,color:"#00c8ff",fontFamily:"monospace",letterSpacing:2}}>
+            📋 C勤務 入れる可能な日
+          </div>
+          <div style={{fontSize:10,color:"#445",marginTop:2}}>シフト管理者への報告用</div>
+        </div>
+        <button onClick={onCopyAvail} style={{
+          padding:"8px 20px",borderRadius:9,fontWeight:800,fontSize:12,
+          cursor:"pointer",fontFamily:"monospace",letterSpacing:1,
+          border:`1px solid ${copiedAvail?"rgba(0,230,118,0.6)":"rgba(0,200,255,0.5)"}`,
+          background:copiedAvail?"rgba(0,230,118,0.12)":"rgba(0,200,255,0.08)",
+          color:copiedAvail?"#00e676":"#00c8ff",
+          transition:"all 0.25s",
+          boxShadow:copiedAvail?"0 0 12px rgba(0,230,118,0.25)":"0 0 8px rgba(0,200,255,0.15)",
+        }}>{copiedAvail?"✅  コピー完了！":"📋  定型文コピー"}</button>
+      </div>
+      <div style={{padding:"12px 16px 0"}}>
+        {availableDays.length===0
+          ? <div style={{fontSize:11,color:"#334",fontFamily:"monospace",paddingBottom:12}}>入れる可能な日がありません（今月）</div>
+          : <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
+              {availableDays.map(d=>(
+                <div key={dateKey(d)} style={{fontSize:11,color:"#00c8ff",fontFamily:"monospace",fontWeight:700,
+                  background:"rgba(0,200,255,0.07)",border:"1px solid rgba(0,200,255,0.25)",
+                  borderRadius:7,padding:"4px 11px"}}>
+                  {d.getMonth()+1}/{d.getDate()}（{WD[d.getDay()]}）
+                </div>
+              ))}
+            </div>
+        }
+      </div>
+      <div style={{margin:"0 16px 16px",background:"rgba(0,0,0,0.5)",
+        border:"1px solid rgba(255,255,255,0.05)",borderRadius:8,padding:"12px 14px",
+        fontSize:11,color:"#667",fontFamily:"monospace",whiteSpace:"pre-wrap",
+        lineHeight:1.85,userSelect:"text"}}>
+        {availTmpl}
+      </div>
+    </div>
+  );
+}
+
+// ── 統計 ─────────────────────────────────────────
+function Stats({ days, data, getEff, dwDays, today }) {
+  const monthly = useMemo(()=>{
+    const r={日勤:0,夜勤:0,明け:0,休み:0};
+    days.forEach(d=>{ const e=getEff(d); if(e in r) r[e]++; });
+    return r;
+  },[days,data]);
+
+  const fyDays  = useMemo(()=>daysInFiscalYear(today),[today]);
+  const fyStart = fiscalYearStart(today);
+  const fyEnd   = new Date(fyStart.getFullYear()+1,2,31);
+  const fyLabel = `${fyStart.getFullYear()}/4/1 〜 ${fyEnd.getFullYear()}/3/31`;
+
+  const yearly = useMemo(()=>{
+    const r={有給:0,看護休暇:0,欠勤:0};
+    fyDays.forEach(d=>{ const e=getEff(d); if(e in r) r[e]++; });
+    return r;
+  },[fyDays,data]);
+
+  const monthItems=[
+    ["日勤",monthly.日勤,"#00c8ff"],["夜勤",monthly.夜勤,"#b06ef7"],
+    ["明け",monthly.明け,"#ff9500"],["休み",monthly.休み,"#00e676"],
+    ["C勤務登録",dwDays.length,"#ffd700"],
+  ];
+  const yearItems=[
+    ["有給",yearly.有給,"#00e676"],
+    ["看護休暇",yearly.看護休暇,"#ff6b9d"],
+    ["欠勤",yearly.欠勤,"#ff5252"],
+  ];
+
+  return (
+    <div style={{marginTop:12,marginBottom:24}}>
+      <div style={{background:"rgba(255,255,255,0.015)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:12,padding:"13px 16px",marginBottom:8}}>
+        <div style={{fontSize:9,color:"#334",fontFamily:"monospace",letterSpacing:3,marginBottom:10}}>今月の集計</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:7}}>
+          {monthItems.map(([l,v,col])=>(
+            <div key={l} style={{textAlign:"center",background:"rgba(0,0,0,0.3)",borderRadius:8,padding:"8px 4px",border:`1px solid ${col}18`}}>
+              <div style={{fontSize:20,fontWeight:900,color:col,fontFamily:"monospace",textShadow:`0 0 12px ${col}77`}}>{v}</div>
+              <div style={{fontSize:9,color:"#334",marginTop:2,letterSpacing:1}}>{l}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{background:"rgba(255,255,255,0.015)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:12,padding:"13px 16px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:4}}>
+          <div style={{fontSize:9,color:"#334",fontFamily:"monospace",letterSpacing:3}}>年度累計</div>
+          <div style={{fontSize:9,color:"#334",fontFamily:"monospace"}}>{fyLabel}</div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:7}}>
+          {yearItems.map(([l,v,col])=>(
+            <div key={l} style={{textAlign:"center",background:"rgba(0,0,0,0.3)",borderRadius:8,padding:"8px 4px",border:`1px solid ${col}18`}}>
+              <div style={{fontSize:20,fontWeight:900,color:col,fontFamily:"monospace",textShadow:`0 0 12px ${col}77`}}>{v}</div>
+              <div style={{fontSize:9,color:"#334",marginTop:2,letterSpacing:1}}>{l}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── メインアプリ ─────────────────────────────────
+function App() {
+  const today = useMemo(()=>new Date(),[]);
+  const [year,  setYear]  = useState(today.getFullYear());
+  const [month, setMonth] = useState(today.getMonth());
+  const [data,  setData]  = useState({});
+  const [modal, setModal] = useState(null);
+  const [tab,   setTab]   = useState("cal");
+  const [copiedAvail, setCopiedAvail] = useState(false);
+
+  const days     = useMemo(()=>Array.from({length:daysInMonth(year,month)},(_,i)=>new Date(year,month,i+1)),[year,month]);
+  const firstDow = new Date(year,month,1).getDay();
+  const getEff   = useCallback(d=>data[dateKey(d)]?.status??getShift(d),[data]);
+  const isTd     = useCallback(d=>dateKey(d)===dateKey(today),[today]);
+
+  const dwDays = useMemo(()=>days.filter(d=>data[dateKey(d)]?.dw===true),[days,data]);
+  const futureDw = useMemo(()=>{ const tk=dateKey(today); return dwDays.filter(d=>dateKey(d)>=tk); },[dwDays,today]);
+
+  const availableDays = useMemo(()=>{
+    const tk=dateKey(today);
+    return days.filter(d=>{
+      const dow=d.getDay(), k=dateKey(d);
+      return isAke(d)&&dow!==5&&dow!==6&&k>=tk&&!data[k]?.dw&&!data[k]?.status;
+    });
+  },[days,data,today]);
+
+  const availTmpl = useMemo(()=>{
+    if(!availableDays.length) return "（入れる可能な日がありません）";
+    const lines=availableDays.map(d=>`　・${d.getMonth()+1}月${d.getDate()}日（${WD[d.getDay()]}）　23:45 〜 翌 08:00`).join("\n");
+    return `お疲れ様です。\n\n以下の日程でC勤務に入ることが可能です。\nご確認いただけますでしょうか。\n\n${lines}\n\nよろしくお願いいたします。`;
+  },[availableDays]);
+
+  function handleCopyAvail() {
+    const el=document.createElement("textarea");
+    el.value=availTmpl; el.style.position="fixed"; el.style.opacity="0";
+    document.body.appendChild(el); el.focus(); el.select();
+    try{document.execCommand("copy");}catch(e){}
+    document.body.removeChild(el);
+    vib(VIB_COPY); setCopiedAvail(true);
+    setTimeout(()=>setCopiedAvail(false),2600);
+  }
+
+  function updData(d,patch){ setData(prev=>{ const k=dateKey(d); return{...prev,[k]:{...(prev[k]||{}),...patch}}; }); }
+  function toggleDw(d){ if(!isAke(d)||data[dateKey(d)]?.status) return; updData(d,{dw:!data[dateKey(d)]?.dw}); }
+  function setStatus(d,status){
+    const base=getShift(d);
+    if(!status){
+      setData(prev=>{
+        const next={...prev}, k=dateKey(d);
+        const{status:_s,...rest}=next[k]||{}; next[k]={...rest,dw:false};
+        if(base==="夜勤"){ const n1=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()+1)), k1=dateKey(n1); if(getShift(n1)==="明け"){ const{status:_s2,...r2}=next[k1]||{}; next[k1]={...r2,dw:false}; } }
+        return next;
+      });
+    } else {
+      setData(prev=>{
+        const next={...prev}, k=dateKey(d); next[k]={...(next[k]||{}),status,dw:false};
+        if(base==="夜勤"){ const n1=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()+1)), k1=dateKey(n1); if(getShift(n1)==="明け") next[k1]={...(next[k1]||{}),status,dw:false}; }
+        return next;
+      });
+    }
+  }
+  function setNote(d,note){ updData(d,{note}); }
+  function prev(){ if(month===0){setYear(y=>y-1);setMonth(11);}else setMonth(m=>m-1); setModal(null); }
+  function next(){ if(month===11){setYear(y=>y+1);setMonth(0);}else setMonth(m=>m+1); setModal(null); }
+  function goNow(){ setYear(today.getFullYear()); setMonth(today.getMonth()); setModal(null); }
+
+  const todayShift = getShift(today);
+  const todaySC    = SS[todayShift];
+
+  return (
+    <div style={R.root}>
+      <div style={R.grid}/>
+      <div style={R.wrap}>
+
+        <header style={R.hdr}>
+          <div>
+            <div style={R.ttl}>シフトカレンダー</div>
+            <div style={R.sub}>交代勤務管理・C勤務シフト</div>
+            <div style={{marginTop:8,display:"inline-flex",alignItems:"center",gap:10,
+              padding:"5px 14px",borderRadius:10,background:todaySC.bg,border:`1px solid ${todaySC.bd}`}}>
+              <span style={{fontSize:13,fontFamily:"monospace",fontWeight:700,color:"#aab",letterSpacing:1}}>
+                {today.getFullYear()}年{today.getMonth()+1}月{today.getDate()}日（{WD[today.getDay()]}）
+              </span>
+              <span style={{fontSize:13,fontFamily:"monospace",fontWeight:900,
+                color:todaySC.ac,textShadow:`0 0 10px ${todaySC.gl}`,letterSpacing:2}}>{todayShift}</span>
+            </div>
+          </div>
+          <LegendBar/>
+        </header>
+
+        <div style={{display:"flex",gap:7,marginBottom:12}}>
+          {[["cal","📅  カレンダー"],["list","☰  一覧"]].map(([v,l])=>(
+            <button key={v} onClick={()=>{vib(VIB_TAP);setTab(v);}} style={{
+              padding:"6px 17px",borderRadius:20,cursor:"pointer",
+              fontSize:11,fontFamily:"monospace",fontWeight:700,transition:"all 0.15s",
+              border:`1px solid ${tab===v?"rgba(0,200,255,0.5)":"rgba(255,255,255,0.06)"}`,
+              background:tab===v?"rgba(0,200,255,0.1)":"transparent",
+              color:tab===v?"#00c8ff":"#445",
+            }}>{l}</button>
+          ))}
+        </div>
+
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+          <button onClick={()=>{vib(VIB_TAP);prev();}} style={R.nb}>◀</button>
+          <div style={{textAlign:"center"}}>
+            <div style={R.ml}>{year}<span style={{fontSize:13,color:"#334",margin:"0 3px"}}>年</span>{month+1}<span style={{fontSize:13,color:"#334",marginLeft:3}}>月</span></div>
+            <div style={{fontSize:10,color:"#334",fontFamily:"monospace",marginTop:1,letterSpacing:1}}>
+              C勤務登録 <span style={{color:"#ff9500",fontWeight:700}}>{dwDays.length}</span> 日
+              　残り <span style={{color:"#ffd700",fontWeight:700}}>{futureDw.length}</span> 日
+            </div>
+          </div>
+          <button onClick={()=>{vib(VIB_TAP);next();}} style={R.nb}>▶</button>
+        </div>
+        <div style={{textAlign:"center",marginBottom:14}}>
+          <button onClick={()=>{vib(VIB_TAP);goNow();}} style={R.tdb}>今日</button>
+        </div>
+
+        <div style={R.card}>
+          {tab==="cal"
+            ? <CalView days={days} firstDow={firstDow} isTd={isTd} data={data} getEff={getEff} onSel={setModal}/>
+            : <ListView days={days} isTd={isTd} data={data} getEff={getEff} onSel={setModal}/>
+          }
+        </div>
+
+        <DWPanel availableDays={availableDays} availTmpl={availTmpl} onCopyAvail={handleCopyAvail} copiedAvail={copiedAvail}/>
+        <Stats days={days} data={data} getEff={getEff} dwDays={dwDays} today={today}/>
+      </div>
+
+      {modal&&(
+        <Modal date={modal} data={data} getEff={getEff}
+          onStatus={s=>setStatus(modal,s)}
+          onToggleDw={()=>toggleDw(modal)}
+          onNote={n=>setNote(modal,n)}
+          onClose={()=>setModal(null)}/>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.render(<App/>, document.getElementById("root"));
+</script>
+</body>
+</html>
